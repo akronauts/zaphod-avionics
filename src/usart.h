@@ -1,49 +1,52 @@
 #define _FOSC 16000000
 #define _BAUD 9600
-#define _UBRR0 (_FOSC / 16 / _BAUD) - 1;  
+#define _UBRR0 (_FOSC / 16 / _BAUD) - 1;
 
 #define LINE_END 0x0A
 #define TRUE 1
 #define FALSE 0
 
+#define BUFFER_SIZE 64
+
 /*
- * USART variables
- * Note that, by design, both buffers are of length 256 and the indices (unsigned chars) will 
- * automatically wrap. 
- */ 
-unsigned char rx_buffer[256]; 
-unsigned char tx_buffer[256]; 
-extern unsigned char rxw_index; 
-extern unsigned char rxr_index; 
-extern unsigned char txw_index; 
-extern unsigned char txs_index; 
+ * used to implement a circular buffer
+ */
+typedef struct Buffer
+{
+	char buf[BUFFER_SIZE];
+	unsigned char head;
+	unsigned char tail;
+} Buffer;
+
+extern Buffer rx;
+extern Buffer tx;
 
 /*
  * initializes the uart communication
  */
-void usart_init(void); 
+void usart_init(void);
 
 /*
- * transmits an entire string and flushes immediately
- */ 
-void usart_send_flush(unsigned char*);
-
-/*
- * transmits a character and flushes immediately
- */ 
-void usart_send_char_flush(unsigned char); 
-
-/*
- * transmits a string without flushing immediately
+ * adds a string to the tx buffer so it will be transmitted 
  */
-void usart_send(unsigned char*); 
+void usart_send(unsigned char*);
 
 /*
- * transmits a character without flushing immediately 
- */ 
-void usart_send_char(unsigned char); 
+ * adds a character to the tx buffer so it will be transmitted 
+ */
+void usart_send_char(unsigned char);
 
 /*
  * perform necessary usart maintnence (goes in loop)
- */ 
-void usart_process(); 
+ */
+void usart_process();
+
+/**
+ * private function for adding a character to a buffer
+ */
+void _buffer_add(Buffer*, unsigned char);
+
+/**
+ * private function for getting a character from a buffer
+ */
+unsigned char _buffer_get_next(Buffer*);

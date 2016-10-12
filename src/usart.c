@@ -3,22 +3,14 @@
 #include <avr/interrupt.h>
 
 // initialize global variables
-unsigned char rxw_index = 0; // index of the last byte written to the rx buffer
-unsigned char rxr_index = 0; // index of the last byte read from the rx buffer
-unsigned char txw_index = 0; // index of the last byte written to the buffer
-unsigned char txs_index = 0; // index of the byte waiting to be sent    
+Buffer rx = {.tail = 0, .head = 0};
+Buffer tx = {.tail = 0, .head = 0};
 
-unsigned char is_rxw_wrapped = FALSE; 
-
-ISR(USART_RX_vect)
+ISR(USART0_RX_vect)
 {
-	if(rxw_index == 0xFF)
-	{
-		is_rxw_wrapped = TRUE; 
-	}
- 	
 	// add the new character to the buffer
-	rx_buffer[rxw_index++] = UDR0; 
+	unsigned char c = UDR0;
+	_buffer_add(&rx, c);
 }
 
 void usart_init(void)
@@ -37,63 +29,94 @@ void usart_init(void)
 	UCSR0C = 0x06;
 }
 
-
-void usart_send_flush(unsigned char* msg)
-{
-	unsigned char c;
-	while ((c = *(msg++)) != 0x00)
-	{
-		// wait for the transmit buffer to empty
-		while (!(UCSR0A & 0x20));
-		// send the current character
-		UDR0 = c; 	
-	}
-}
-
-void usart_send_char_flush(unsigned char c)
-{
-	// wait for the transmit buffer to be empty
-	while(!(UCSR0A & 0x20));
-	// send the character
-	UDR0 = c;  
-}
-
 void usart_send(unsigned char* msg)
 {
-	unsigned char c; 
+	unsigned char c;
 	while((c = *(msg++)) != 0x00)
 	{
-		tx_buffer[txw_index++] = c; 
+		_buffer_add(&tx, c);
 	}
 }
 
 void usart_send_char(unsigned char c)
 {
-	tx_buffer[txw_index++] = c; 
+	_buffer_add(&tx, c);
 }
 
 void usart_process()
 {
-	// transmit the next char in the buffer, if any
-	if (txs_index < txw_index)
+	unsigned char c;
+	// transmit the next byte in the buffer, if any
+	if ((c = _buffer_get_next(&tx)) != 0x00 )
 	{
-		usart_send_char_flush(tx_buffer[txs_index++]);
+		// wait for the transmit buffer to be empty
+        while(!(UCSR0A & 0x20));
+        // send the character
+        UDR0 = c;
 	}
 
 	// check for any new messages
-	unsigned char i = rxr_index;
-	unsigned char c; 
-	while(i++ < rxw_index || (is_rxw_wrapped == TRUE))
+	// save a copy of the tail in case we need to revert
+	unsigned char tail = rx.tail;
+	while((c = _buffer_get_next(&rx)) != 0x00)
 	{
-		is_rxw_wrapped = FALSE; 
-		if ((c = rx_buffer[i]) == LINE_END)
+		if (c == LINE_END)
 		{
 			// there is a new message
 			// send it back
-			while (rxr_index < i)
+			rx.tail = tail;
+			while ((c = _buffer_get_next(&rx)) != LINE_END)
 			{
-				usart_send_char(rx_buffer[rxr_index++]);
-			}  
+				// do something with the message here!
+				usart_send_char(c);
+			}
+			usart_send_char('\n');
+			return;
 		}
 	}
+	rx.tail = tail;
+}
+
+void _buffer_add(Buffer* b, unsigned char c)
+{
+	if (b->head < BUFFER_SIZE)
+	{
+		// normal operation; add byte to buffer
+		b->buf[b->head++] = c;
+	}
+	else
+	{
+		// reached buffer limit; wrap around
+		b->head = 0;
+		b->buf[b->head++] = c;
+	}
+}
+
+unsigned char _buffer_get_next(Buffer* b)
+{
+	unsigned char c;
+	if (b->tail < b->head)
+	{
+		// normal operation; get the next byte in the buffer
+		c =  b->buf[b->tail++];
+	}
+	else if (b->tail > b->head)
+	{
+		// it appears the buffer has wrapped; still get the next byte
+		if (b->tail < BUFFER_SIZE)
+		{
+			c = b->buf[b->tail++];
+		}
+		else
+		{
+			b->tail = 0;
+			c = b->buf[b->tail++];
+		}
+	}
+	else
+	{
+		// no bytes to get
+		c = 0x00;
+	}
+	return c;
 }
