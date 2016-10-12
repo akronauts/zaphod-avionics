@@ -6,6 +6,11 @@
 Buffer rx = {.tail = 0, .head = 0};
 Buffer tx = {.tail = 0, .head = 0};
 
+
+/**
+ * this interrupt service routine fires every time a new character (byte) is received by 
+ * by rx0 
+ */ 
 ISR(USART0_RX_vect)
 {
 	// add the new character to the buffer
@@ -34,12 +39,14 @@ void usart_send(unsigned char* msg)
 	unsigned char c;
 	while((c = *(msg++)) != 0x00)
 	{
+		// add each character to the tx buffer
 		_buffer_add(&tx, c);
 	}
 }
 
 void usart_send_char(unsigned char c)
 {
+	// add the character to the tx buffer
 	_buffer_add(&tx, c);
 }
 
@@ -56,14 +63,14 @@ void usart_process()
 	}
 
 	// check for any new messages
-	// save a copy of the tail in case we need to revert
+	// save a copy of the tail so we can replace it later
 	unsigned char tail = rx.tail;
 	while((c = _buffer_get_next(&rx)) != 0x00)
 	{
 		if (c == LINE_END)
 		{
 			// there is a new message
-			// send it back
+			// revert the rx tail so we can grab it 
 			rx.tail = tail;
 			while ((c = _buffer_get_next(&rx)) != LINE_END)
 			{
